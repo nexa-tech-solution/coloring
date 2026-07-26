@@ -77,9 +77,9 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
-    namespace "com.coloring"
+    namespace "com.nexa.coloring"
     defaultConfig {
-        applicationId "com.coloring"
+        applicationId "com.nexa.coloring"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
