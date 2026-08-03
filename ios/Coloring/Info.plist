@@ -33,8 +33,10 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string></string>
+	<key>NSCameraUsageDescription</key>
+	<string>Coloring uses the camera so you can take a photo and turn it into a coloring page.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Coloring needs access to your photos so you can pick a picture from your library and turn it into a coloring page.</string>
 	<key>RCTNewArchEnabled</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>

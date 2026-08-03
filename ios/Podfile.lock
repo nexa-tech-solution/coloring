@@ -1916,6 +1916,28 @@ PODS:
     - React-utils (= 0.86.0)
     - ReactNativeDependencies
   - ReactNativeDependencies (0.86.0)
+  - RNPermissions (5.6.1):
+    - hermes-engine
+    - RCTRequired
+    - RCTTypeSafety
+    - React-Core
+    - React-Core-prebuilt
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/bridging
+    - ReactCommon/turbomodule/core
+    - ReactNativeDependencies
+    - Yoga
   - Yoga (0.0.0)
 
 DEPENDENCIES:
@@ -1997,6 +2019,7 @@ DEPENDENCIES:
   - ReactCodegen (from `build/generated/ios/ReactCodegen`)
   - ReactCommon/turbomodule/core (from `../node_modules/react-native/ReactCommon`)
   - ReactNativeDependencies (from `../node_modules/react-native/third-party-podspecs/ReactNativeDependencies.podspec`)
+  - RNPermissions (from `../node_modules/react-native-permissions`)
   - Yoga (from `../node_modules/react-native/ReactCommon/yoga`)
 
 EXTERNAL SOURCES:
@@ -2155,13 +2178,15 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native/ReactCommon"
   ReactNativeDependencies:
     :podspec: "../node_modules/react-native/third-party-podspecs/ReactNativeDependencies.podspec"
+  RNPermissions:
+    :path: "../node_modules/react-native-permissions"
   Yoga:
     :path: "../node_modules/react-native/ReactCommon/yoga"
 
 SPEC CHECKSUMS:
   BVLinearGradient: cb006ba232a1f3e4f341bb62c42d1098c284da70
   FBLazyVector: b3e7ad108f0d882e30445c5527d774e3fd432f3d
-  hermes-engine: f69531cc8634612b0cc9e0057b04339c1af2203e
+  hermes-engine: d04fcb8dc6d9f730a9338aa2141c1dd0db8e2cc8
   RCTDeprecation: 2a74a2c57675e64419bd89078efde81f7c1de90b
   RCTRequired: 30451112e6fef4e6f31b4e7eee0845156e35e4b0
   RCTSwiftUI: 5aaf0b07e747ba749dc6acc94d8bd41eea4b570f
@@ -2236,8 +2261,9 @@ SPEC CHECKSUMS:
   ReactCodegen: afe0d436ee089d7bea6418429d8312b1d23a6801
   ReactCommon: d5c1bb4427bf51c443de5926aac332c89ddd9363
   ReactNativeDependencies: fa0a54b3f5319ae0e3b9aff32bfee7a424b88e66
+  RNPermissions: 4938eb41631c3755c1c56e10c5022c9193a4f427
   Yoga: fe50ab299e578f397fef753cf309c6703a4db29b
 
-PODFILE CHECKSUM: c406a3be7f9114697bd90cbd38cad2c92d094897
+PODFILE CHECKSUM: ce88f2050d6d259b682899256d1d00b9ef7a502d
 
 COCOAPODS: 1.15.2
