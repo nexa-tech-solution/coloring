@@ -1,8 +1,15 @@
-import { useCallback, useEffect, useRef, useState, type ComponentRef } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ComponentRef,
+} from 'react';
 import {
   Alert,
   Animated,
   AppState,
+  Easing,
   LayoutChangeEvent,
   Platform,
   StatusBar,
@@ -68,25 +75,119 @@ const GRADIENT_COLORS = ['#E8A0BF', '#9B89E6'];
 const GRADIENT_START = { x: 0, y: 0 };
 const GRADIENT_END = { x: 1, y: 0 };
 
-function ProgressBar({ progress }: { progress: number }) {
-  const percent = Math.round(progress * 100);
+// Cruising speed, expressed as the time a full 0→100% sweep would take. Every move
+// runs at this speed, so a retarget changes the destination without changing the pace.
+const SWEEP_MS = 900;
+const MIN_STEP_MS = 90;
+const MAX_STEP_MS = 700;
+// Once caught up to the last reported value, drift this far into the remaining
+// distance...
+const CREEP_FRACTION = 0.35;
+// ...at a crawl, and never far enough to imply the page is nearly done.
+const CREEP_MS = 2600;
+const CREEP_CEILING = 0.97;
+const FINISH_MAX_MS = 450;
+const FADE_MS = 200;
+
+const stepDuration = (distance: number, max: number = MAX_STEP_MS) =>
+  Math.min(max, Math.max(MIN_STEP_MS, distance * SWEEP_MS));
+
+function ProgressBar({
+  progress,
+  done,
+  onHidden,
+}: {
+  progress: number;
+  done: boolean;
+  onHidden: () => void;
+}) {
   const animValue = useRef(new Animated.Value(0)).current;
+  const fade = useRef(new Animated.Value(1)).current;
   const [trackWidth, setTrackWidth] = useState(0);
+  const [percent, setPercent] = useState(0);
+  // What the bar is showing *right now*, kept fresh by the listener below. Reading the
+  // live value (rather than the last target) is what lets a retarget mid-flight measure
+  // the distance it actually has left to travel.
+  const shownRef = useRef(0);
+
+  // The label is derived from the animated value, never from the incoming `progress`
+  // prop. Reading the prop is what made the text claim 50% while the fill sat at 20%:
+  // the prop is the animation's *destination*, and the fill was still on its way there.
+  // setState is gated on the whole-percent changing, so this costs at most 100 renders
+  // of a single <Text> across the entire load.
+  useEffect(() => {
+    const id = animValue.addListener(({ value }) => {
+      shownRef.current = value;
+      const next = Math.round(value * 100);
+      setPercent(prev => (prev === next ? prev : next));
+    });
+    return () => animValue.removeListener(id);
+  }, [animValue]);
 
   useEffect(() => {
-    // Spring rather than ease-out timing: load progress arrives irregularly and every
-    // event retargets the animation mid-flight. Ease-out *starts* at peak velocity, so
-    // each retarget reads as a jolt; a spring accelerates from rest and absorbs it.
-    Animated.spring(animValue, {
-      toValue: progress,
-      useNativeDriver: true,
-      stiffness: 70,
-      damping: 20,
-      mass: 1,
-      restDisplacementThreshold: 0.001,
-      restSpeedThreshold: 0.001,
-    }).start();
-  }, [progress, animValue]);
+    if (done) {
+      return;
+    }
+    // Never travel backwards: WKWebView's estimatedProgress dips when a sub-resource
+    // navigates, and the creep below can legitimately drift past the last real report.
+    const target = Math.max(progress, shownRef.current);
+
+    const animation = Animated.sequence([
+      Animated.timing(animValue, {
+        toValue: target,
+        duration: stepDuration(target - shownRef.current),
+        // Linear on purpose. Progress events arrive in bursts and each one retargets
+        // this animation mid-flight. Any easing curve — or a spring, which also starts
+        // from rest — drops the bar back to zero velocity on every single event:
+        // decelerate, stall, re-accelerate. That stutter is the jank. Constant speed
+        // has no velocity discontinuity to see.
+        easing: Easing.linear,
+        useNativeDriver: true,
+      }),
+      Animated.timing(animValue, {
+        toValue: Math.min(
+          CREEP_CEILING,
+          target + (1 - target) * CREEP_FRACTION,
+        ),
+        duration: CREEP_MS,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }),
+    ]);
+
+    // WKWebView can go seconds between progress events. Without the creep the bar
+    // freezes in those gaps and then lurches when the next event lands.
+    animation.start();
+    return () => animation.stop();
+  }, [progress, done, animValue]);
+
+  useEffect(() => {
+    if (!done) {
+      return;
+    }
+    Animated.sequence([
+      Animated.timing(animValue, {
+        toValue: 1,
+        duration: stepDuration(1 - shownRef.current, FINISH_MAX_MS),
+        // The one move that has a known endpoint, so it can afford to land softly.
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }),
+      Animated.timing(fade, {
+        toValue: 0,
+        duration: FADE_MS,
+        easing: Easing.in(Easing.quad),
+        useNativeDriver: true,
+      }),
+    ]).start(({ finished }) => {
+      // Unmounting is deferred until the fill has actually reached the end and faded.
+      // Tearing the overlay down the instant loading finished used to cut the bar off
+      // wherever it happened to be — the harshest jump in the whole sequence.
+      if (finished) {
+        onHidden();
+      }
+    });
+  }, [done, animValue, fade, onHidden]);
 
   // Slide a track-coloured cover off to the right instead of growing the fill's width.
   // width is a layout prop, so it cannot use the native driver and animated on the JS
@@ -102,8 +203,14 @@ function ProgressBar({ progress }: { progress: number }) {
   };
 
   return (
-    <View style={styles.overlay}>
-      <View style={styles.loadingBox}>
+    <Animated.View style={[styles.overlay, { opacity: fade }]}>
+      <View
+        style={styles.loadingBox}
+        accessible
+        accessibilityRole="progressbar"
+        accessibilityLabel="Loading"
+        accessibilityValue={{ min: 0, max: 100, now: percent }}
+      >
         <Text style={styles.percentText}>{percent}%</Text>
         <View style={styles.trackContainer} onLayout={onTrackLayout}>
           <LinearGradient
@@ -120,13 +227,18 @@ function ProgressBar({ progress }: { progress: number }) {
           />
         </View>
       </View>
-    </View>
+    </Animated.View>
   );
 }
 
 function App() {
   const [progress, setProgress] = useState(0);
-  const [loaded, setLoaded] = useState(false);
+  // Two flags, not one: `done` means the page finished loading, `hidden` means the
+  // overlay has finished animating itself out. Collapsing them is what let the bar
+  // vanish before it reached 100%.
+  const [done, setDone] = useState(false);
+  const [hidden, setHidden] = useState(false);
+  const onOverlayHidden = useCallback(() => setHidden(true), []);
   // ComponentRef<typeof WebView>, not WebView: the library declares
   // `class WebView<P = undefined> extends Component<WebViewProps & P>`, so a bare
   // `WebView` ref collapses every prop to `never`.
@@ -198,7 +310,10 @@ function App() {
         'Coloring needs camera or photo access to add a picture. Turn it on in Settings.',
         [
           { text: 'Not now', style: 'cancel' },
-          { text: 'Open Settings', onPress: () => openSettings().catch(() => {}) },
+          {
+            text: 'Open Settings',
+            onPress: () => openSettings().catch(() => {}),
+          },
         ],
       );
     },
@@ -212,10 +327,10 @@ function App() {
         <WebView
           ref={webViewRef}
           source={{ uri: 'https://color-sprite-canvas.vercel.app/' }}
+          //source={{ uri: 'http://localhost:8080' }}
           style={styles.webview}
           javaScriptEnabled
           domStorageEnabled
-          startInLoadingState
           allowsInlineMediaPlayback
           contentInsetAdjustmentBehavior="never"
           onMessage={onMessage}
@@ -224,20 +339,21 @@ function App() {
             // Ignore backwards jumps (WKWebView's estimatedProgress dips when a
             // sub-resource navigates) and sub-percent noise. Returning `prev`
             // makes React bail out, so the busy JS thread skips a whole re-render.
-            setProgress(prev =>
-              next <= prev || Math.round(next * 100) === Math.round(prev * 100)
-                ? prev
-                : next,
-            );
+            setProgress(prev => (next > prev + 0.005 ? next : prev));
           }}
           onLoadEnd={() => {
-            setProgress(1);
-            setLoaded(true);
+            setDone(true);
             syncMediaAccess();
           }}
         />
       </SafeAreaView>
-      {!loaded && <ProgressBar progress={progress} />}
+      {!hidden && (
+        <ProgressBar
+          progress={progress}
+          done={done}
+          onHidden={onOverlayHidden}
+        />
+      )}
     </SafeAreaProvider>
   );
 }
