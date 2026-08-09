@@ -26,6 +26,11 @@ import {
   request,
   type Permission,
 } from 'react-native-permissions';
+import {
+  BannerAd,
+  BannerAdSize,
+  TestIds,
+} from 'react-native-google-mobile-ads';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 
@@ -69,6 +74,60 @@ async function requestMediaPermissions() {
     }
   }
 }
+
+// Separate AdMob apps per platform, so the banner units are separate too. A unit only
+// serves under the app it was created in — crossing them over yields no fill at best.
+const ANDROID_BANNER_UNIT_ID = 'ca-app-pub-3012411444875177/9216172701';
+const IOS_BANNER_UNIT_ID = 'ca-app-pub-3012411444875177/2139628460';
+
+// Never the real unit in development: debug traffic against a live ad unit is invalid
+// activity, and Google suspends accounts over it.
+const BANNER_AD_UNIT_ID = __DEV__
+  ? TestIds.ADAPTIVE_BANNER
+  : Platform.select({
+      ios: IOS_BANNER_UNIT_ID,
+      // `default` rather than `android`, because Platform.select without one is typed
+      // string | undefined and BannerAd's unitId needs a string.
+      default: ANDROID_BANNER_UNIT_ID,
+    });
+
+// The web app is a TanStack Router SPA: `/` is the page picker, `/projects/<id>` is the
+// canvas. The banner belongs on the picker only — it must never sit under the drawing
+// surface, where a misplaced tap on an ad is both terrible UX and an invalid click.
+// Whitelist rather than blacklist, so any route added later starts ad-free by default.
+const LIST_PATH = '/';
+
+/**
+ * Reports the SPA's current path to native.
+ *
+ * `onNavigationStateChange` is no use here: TanStack Router moves between screens with
+ * history.pushState, which fires no WebView navigation event on either platform, so the
+ * banner would stay stuck on whatever the first page was. Patching the history methods
+ * is the only signal that catches every transition. Runs on each full page load; the
+ * flag keeps a re-injection from stacking wrappers on top of the previous ones.
+ */
+const ROUTE_BRIDGE = `
+(function () {
+  if (window.__routeBridgeInstalled) { return; }
+  window.__routeBridgeInstalled = true;
+  var post = function () {
+    window.ReactNativeWebView.postMessage(
+      JSON.stringify({ type: 'ROUTE', path: window.location.pathname }),
+    );
+  };
+  ['pushState', 'replaceState'].forEach(function (name) {
+    var original = history[name];
+    history[name] = function () {
+      var result = original.apply(this, arguments);
+      post();
+      return result;
+    };
+  });
+  window.addEventListener('popstate', post);
+  post();
+})();
+true;
+`;
 
 const TRACK_COLOR = '#F0DDE5';
 const GRADIENT_COLORS = ['#E8A0BF', '#9B89E6'];
@@ -239,6 +298,9 @@ function App() {
   const [done, setDone] = useState(false);
   const [hidden, setHidden] = useState(false);
   const onOverlayHidden = useCallback(() => setHidden(true), []);
+  // Starts null, not '/': until the page reports a route we do not know which screen is
+  // showing, and guessing wrong would flash a banner onto the canvas.
+  const [path, setPath] = useState<string | null>(null);
   // ComponentRef<typeof WebView>, not WebView: the library declares
   // `class WebView<P = undefined> extends Component<WebViewProps & P>`, so a bare
   // `WebView` ref collapses every prop to `never`.
@@ -276,13 +338,21 @@ function App() {
 
   const onMessage = useCallback(
     async (event: WebViewMessageEvent) => {
-      let type: unknown;
+      let message: { type?: unknown; path?: unknown };
       try {
-        type = JSON.parse(event.nativeEvent.data)?.type;
+        message = JSON.parse(event.nativeEvent.data);
       } catch {
         return;
       }
-      if (type !== 'REQUEST_MEDIA_ACCESS') {
+
+      if (message?.type === 'ROUTE') {
+        if (typeof message.path === 'string') {
+          setPath(message.path);
+        }
+        return;
+      }
+
+      if (message?.type !== 'REQUEST_MEDIA_ACCESS') {
         return;
       }
 
@@ -333,6 +403,7 @@ function App() {
           domStorageEnabled
           allowsInlineMediaPlayback
           contentInsetAdjustmentBehavior="never"
+          injectedJavaScript={ROUTE_BRIDGE}
           onMessage={onMessage}
           onLoadProgress={e => {
             const next = e.nativeEvent.progress;
@@ -346,6 +417,21 @@ function App() {
             syncMediaAccess();
           }}
         />
+        {/* Unmounted rather than hidden on the canvas: an ad that renders where nobody
+            can see it still books an impression, which is exactly what AdMob's invalid
+            traffic policy prohibits.
+
+            Flush to the bottom edge, with no inset for the home indicator — the
+            enclosing SafeAreaView deliberately omits the bottom edge for the same
+            reason. The indicator floats over the banner's lower strip. */}
+        {path === LIST_PATH && (
+          <View style={styles.bannerArea}>
+            <BannerAd
+              unitId={BANNER_AD_UNIT_ID}
+              size={BannerAdSize.ANCHORED_ADAPTIVE_BANNER}
+            />
+          </View>
+        )}
       </SafeAreaView>
       {!hidden && (
         <ProgressBar
@@ -365,6 +451,10 @@ const styles = StyleSheet.create({
   },
   webview: {
     flex: 1,
+  },
+  bannerArea: {
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
   },
   overlay: {
     position: 'absolute',

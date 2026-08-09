@@ -24,6 +24,13 @@
 	<string>????</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<!-- The Google Mobile Ads SDK reads the app ID from here and hard-crashes on launch
+	     without it. Android gets the same value injected into its manifest automatically
+	     from app.json; iOS has no such step unless you add react-native-google-mobile-ads'
+	     ios_config.sh as an Xcode build phase, so it is set statically. Keep this in sync
+	     with ios_app_id in app.json. -->
+	<key>GADApplicationIdentifier</key>
+	<string>ca-app-pub-3012411444875177~6645849681</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSAppTransportSecurity</key>

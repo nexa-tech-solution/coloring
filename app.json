@@ -1,4 +1,8 @@
 {
   "name": "Coloring",
-  "displayName": "Coloring"
+  "displayName": "Coloring",
+  "react-native-google-mobile-ads": {
+    "android_app_id": "ca-app-pub-3012411444875177~9980404122",
+    "ios_app_id": "ca-app-pub-3012411444875177~6645849681"
+  }
 }
