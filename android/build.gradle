@@ -5,7 +5,9 @@ buildscript {
         compileSdkVersion = 36
         targetSdkVersion = 36
         ndkVersion = "27.1.12297006"
-        kotlinVersion = "2.1.20"
+        // Must be >= 2.3.0: play-services-ads 25.x (react-native-google-mobile-ads)
+        // ships Kotlin 2.3.0 metadata, which older compilers cannot read.
+        kotlinVersion = "2.3.0"
     }
     repositories {
         google()
@@ -14,7 +16,13 @@ buildscript {
     dependencies {
         classpath("com.android.tools.build:gradle")
         classpath("com.facebook.react:react-native-gradle-plugin")
-        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin")
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlinVersion")
+    }
+
+    // react-native-gradle-plugin constrains KGP to the version RN ships with,
+    // so the explicit classpath above has to be forced to win.
+    configurations.classpath {
+        resolutionStrategy.force("org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlinVersion")
     }
 }
 
