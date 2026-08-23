@@ -11,6 +11,7 @@ import {
   AppState,
   Easing,
   LayoutChangeEvent,
+  NativeModules,
   Platform,
   StatusBar,
   StyleSheet,
@@ -34,9 +35,19 @@ import {
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 
+const { ImageShare } = NativeModules as {
+  ImageShare?: {
+    saveImage: (dataUrl: string, filename: string) => Promise<void>;
+    shareImage: (dataUrl: string, filename: string) => Promise<void>;
+  };
+};
+
 const MEDIA_PERMISSIONS = Platform.select({
   ios: [PERMISSIONS.IOS.CAMERA, PERMISSIONS.IOS.PHOTO_LIBRARY],
-  android: [PERMISSIONS.ANDROID.CAMERA],
+  android:
+    Platform.Version <= 28
+      ? [PERMISSIONS.ANDROID.CAMERA, PERMISSIONS.ANDROID.WRITE_EXTERNAL_STORAGE]
+      : [PERMISSIONS.ANDROID.CAMERA],
   default: [],
 });
 
@@ -126,6 +137,11 @@ const ROUTE_BRIDGE = `
   window.addEventListener('popstate', post);
   post();
 })();
+true;
+`;
+
+const ANDROID_NATIVE_CAPABILITIES = `
+window.__nativeCapabilities = { saveImage: true, shareImage: true };
 true;
 `;
 
@@ -338,7 +354,13 @@ function App() {
 
   const onMessage = useCallback(
     async (event: WebViewMessageEvent) => {
-      let message: { type?: unknown; path?: unknown };
+      let message: {
+        type?: unknown;
+        path?: unknown;
+        requestId?: unknown;
+        filename?: unknown;
+        dataUrl?: unknown;
+      };
       try {
         message = JSON.parse(event.nativeEvent.data);
       } catch {
@@ -348,6 +370,39 @@ function App() {
       if (message?.type === 'ROUTE') {
         if (typeof message.path === 'string') {
           setPath(message.path);
+        }
+        return;
+      }
+
+      if (message?.type === 'SAVE_IMAGE' || message?.type === 'SHARE_IMAGE') {
+        if (
+          typeof message.requestId !== 'string' ||
+          typeof message.filename !== 'string' ||
+          typeof message.dataUrl !== 'string' ||
+          !ImageShare
+        ) {
+          return;
+        }
+
+        try {
+          if (message.type === 'SAVE_IMAGE') {
+            await ImageShare.saveImage(message.dataUrl, message.filename);
+          } else {
+            await ImageShare.shareImage(message.dataUrl, message.filename);
+          }
+          webViewRef.current?.injectJavaScript(
+            `window.__nativeSaveImageResult?.(${JSON.stringify({
+              requestId: message.requestId,
+              ok: true,
+            })}); true;`,
+          );
+        } catch {
+          webViewRef.current?.injectJavaScript(
+            `window.__nativeSaveImageResult?.(${JSON.stringify({
+              requestId: message.requestId,
+              ok: false,
+            })}); true;`,
+          );
         }
         return;
       }
@@ -404,6 +459,9 @@ function App() {
           allowsInlineMediaPlayback
           contentInsetAdjustmentBehavior="never"
           injectedJavaScript={ROUTE_BRIDGE}
+          injectedJavaScriptBeforeContentLoaded={
+            Platform.OS === 'android' ? ANDROID_NATIVE_CAPABILITIES : undefined
+          }
           onMessage={onMessage}
           onLoadProgress={e => {
             const next = e.nativeEvent.progress;
